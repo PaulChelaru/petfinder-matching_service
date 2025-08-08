@@ -15,12 +15,11 @@ import {
 import {
     createMatch,
 } from "./database.js";
-import mongoose from "mongoose";
 import {
     findPotentialMatches,
 } from "./announcements.js";
 import {
-    buildBaseMatchQuery,
+    buildCompleteMatchQuery,
 } from "./queries.js";
 import {
     buildMatchDataForSaving,
@@ -33,23 +32,34 @@ import {
  */
 async function processNewAnnouncement(fastify, announcement) {
     try {
-        fastify.log.info(`🔍 Processing new ${announcement.type} announcement: ${announcement._id}`);
+        fastify.log.info(`🔍 Processing new ${announcement.type} announcement: ${announcement.announcementId}`);
 
-        // Find potential matches based on announcement type
-        const potentialMatches = await findPotentialMatches(fastify, buildBaseMatchQuery(announcement));
+        // Configure query options based on announcement type and available data
+        const queryOptions = {
+            maxDistance: fastify.config.MATCHING_MAX_DISTANCE, // Configurable via env var
+            daysBefore: fastify.config.MATCHING_DAYS_BEFORE,
+            daysAfter: fastify.config.MATCHING_DAYS_AFTER,
+        };
+
+        // Find potential matches using complete query with all filters
+        const completeQuery = buildCompleteMatchQuery(announcement, queryOptions);
+
+        fastify.log.info(`Query options: maxDistance=${queryOptions.maxDistance}m, daysBefore=${queryOptions.daysBefore}, daysAfter=${queryOptions.daysAfter}`);
+
+        const potentialMatches = await findPotentialMatches(fastify, completeQuery);
 
         if (potentialMatches.length === 0) {
-            fastify.log.info(`No potential matches found for announcement ${announcement._id}`);
+            fastify.log.info(`No potential matches found for announcement ${announcement.announcementId}`);
             return;
         }
 
-        fastify.log.info(`Found ${potentialMatches.length} potential matches for announcement ${announcement._id}`);
+        fastify.log.info(`Found ${potentialMatches.length} potential matches for announcement ${announcement.announcementId}`);
 
         // Process and analyze all potential matches
         const analyzedMatches = await processAllMatchCandidates(fastify, announcement, potentialMatches);
 
         if (analyzedMatches.length === 0) {
-            fastify.log.info(`No high-confidence matches found for announcement ${announcement._id}`);
+            fastify.log.info(`No high-confidence matches found for announcement ${announcement.announcementId}`);
             return;
         }
 
@@ -60,11 +70,11 @@ async function processNewAnnouncement(fastify, announcement) {
             // Save to database
             const matchData = buildMatchDataForSaving(announcement, matches);
             await saveMatchesToDb(fastify, matchData);
-            fastify.log.info(`✅ Saved ${matches.length} match results for ${announcement._id} to database`);
+            fastify.log.info(`✅ Saved ${matches.length} match results for ${announcement.announcementId} to database`);
         }
 
     } catch (error) {
-        fastify.log.error(`Error processing announcement ${announcement._id}:`, error);
+        fastify.log.error(`Error processing announcement ${announcement.announcementId}:`, error);
         throw error;
     }
 }
@@ -197,8 +207,8 @@ async function saveMatchesToDb(fastify, matchData) {
             const foundId = matchData.sourceType === "found" ? matchData.sourceAnnouncementId : match.targetAnnouncementId;
 
             const matchRecord = {
-                lostAnnouncementId: mongoose.Types.ObjectId.isValid(lostId) ? new mongoose.Types.ObjectId(lostId) : lostId,
-                foundAnnouncementId: mongoose.Types.ObjectId.isValid(foundId) ? new mongoose.Types.ObjectId(foundId) : foundId,
+                lostAnnouncementId: lostId,
+                foundAnnouncementId: foundId,
                 confidence: match.confidence,
                 distance: match.distance,
                 timeDifference: match.timeDifferenceHours,

@@ -34,9 +34,18 @@ async function build() {
 }
 
 build()
-    .then(app => {
+    .then(async app => {
         if (app) {
             app.log.info("Pet matching service active");
+            
+            // Start the server
+            try {
+                await app.listen({ port: app.config.PORT, host: "0.0.0.0" });
+                app.log.info(`Server listening on port ${app.config.PORT}`);
+            } catch (err) {
+                app.log.error(err);
+                process.exit(1);
+            }
         } else {
             console.error("Failed to build Fastify app");
             process.exit(1);

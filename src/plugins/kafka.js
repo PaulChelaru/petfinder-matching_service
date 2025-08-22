@@ -11,19 +11,25 @@ async function connectToKafka(fastify) {
     try {
         const brokers = fastify.config.KAFKA_BROKERS.split(",");
 
-        const kafka = new Kafka({
+        const kafkaConfig = {
             clientId: fastify.config.KAFKA_CLIENT_ID,
             brokers,
-            sasl: {
-                mechanism: "plain",
-                username: fastify.config.KAFKA_USERNAME,
-                password: fastify.config.KAFKA_PASSWORD,
-            },
             retry: {
                 initialRetryTime: 100,
                 retries: 8,
             },
-        });
+        };
+
+        // Only add SASL if username and password are provided
+        if (fastify.config.KAFKA_USERNAME && fastify.config.KAFKA_PASSWORD) {
+            kafkaConfig.sasl = {
+                mechanism: "plain",
+                username: fastify.config.KAFKA_USERNAME,
+                password: fastify.config.KAFKA_PASSWORD,
+            };
+        }
+
+        const kafka = new Kafka(kafkaConfig);
 
         // Create consumer for announcement events
         const consumer = kafka.consumer({

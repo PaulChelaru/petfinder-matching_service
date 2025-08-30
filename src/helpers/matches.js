@@ -1,4 +1,3 @@
-import mongoose from "mongoose";
 import { v4 as uuidv4 } from "uuid";
 import {
     analyzeSpeciesMatch,
@@ -60,7 +59,7 @@ async function processNewAnnouncement(fastify, announcement) {
 
         fastify.log.info(`🎯 Found ${potentialMatches.length} potential matches for announcement ${announcement.announcementId || announcement._id}`);
         potentialMatches.forEach((match, index) => {
-            fastify.log.info(`   Match ${index + 1}: ${match._id} - ${match.species} ${match.breed} in ${match.locationName}`);
+            fastify.log.info(`   Match ${index + 1}: ${match.announcementId} - ${match.species} ${match.breed} in ${match.locationName}`);
         });
 
         // Process and analyze all potential matches
@@ -80,18 +79,18 @@ async function processNewAnnouncement(fastify, announcement) {
             // Save to database and get back match records with UUIDs
             const matchData = buildMatchDataForSaving(announcement, matches);
             const savedMatches = await saveMatchesToDb(fastify, matchData);
-            fastify.log.info(`💾 Saved ${matches.length} match results for ${announcement.announcementId || announcement._id} to database`);
+            fastify.log.info(`💾 Saved ${matches.length} match results for ${announcement.announcementId} to database`);
             
-            // Update the source announcement with match UUIDs
-            const matchUUIDs = savedMatches.map(match => match.matchId);
-            await updateAnnouncementMatches(fastify, announcement._id, matchUUIDs);
+            // Update the source announcement with matched announcement IDs
+            const matchedAnnouncementIds = savedMatches.map(match => match.matchedAnnouncementId);
+            await updateAnnouncementMatches(fastify, announcement.announcementId, matchedAnnouncementIds);
             
-            // Update each matched announcement with the match UUIDs
+            // Update each matched announcement with the source announcement ID
             for (const savedMatch of savedMatches) {
-                await updateAnnouncementMatches(fastify, savedMatch.matchedAnnouncementId, [savedMatch.matchId]);
+                await updateAnnouncementMatches(fastify, savedMatch.matchedAnnouncementId, [announcement.announcementId]);
             }
             
-            fastify.log.info("🔄 Updated all announcements with bidirectional match UUID references");
+            fastify.log.info("🔄 Updated all announcements with bidirectional announcement ID references");
         }
 
     } catch (error) {
@@ -132,11 +131,11 @@ async function processMatchCandidate(fastify, announcement, candidate) {
     // Analyze the match using the algorithm
         const matchResult = simpleMatchAnalysis(announcement, candidate);
 
-        fastify.log.info(`Match candidate ${candidate._id}: confidence=${matchResult.confidence}%`);
+        fastify.log.info(`Match candidate ${candidate.announcementId}: confidence=${matchResult.confidence}%`);
 
         // Filter by minimum confidence threshold (lowered for testing)
         if (matchResult.confidence < 30) {
-            fastify.log.info(`Rejected candidate ${candidate._id}: confidence ${matchResult.confidence}% < 30%`);
+            fastify.log.info(`Rejected candidate ${candidate.announcementId}: confidence ${matchResult.confidence}% < 30%`);
             return null;
         }
 
@@ -144,9 +143,17 @@ async function processMatchCandidate(fastify, announcement, candidate) {
         const distance = calculateDistance(announcement.location, candidate.location);
         const timeDifference = calculateTimeDifference(announcement.lastSeenDate, candidate.lastSeenDate);
 
-        // Return enriched match data
+        // Return enriched match data - use only announcementId for consistency
         return {
-            ...candidate,
+            announcementId: candidate.announcementId,
+            type: candidate.type,
+            species: candidate.species,
+            breed: candidate.breed,
+            location: candidate.location,
+            lastSeenDate: candidate.lastSeenDate,
+            description: candidate.description,
+            photos: candidate.photos || [],
+            contactInfo: candidate.contactInfo,
             confidence: matchResult.confidence,
             reasoning: matchResult.reasoning,
             matchFactors: matchResult.matchFactors,
@@ -217,19 +224,6 @@ function generateTopMatches(analyzedMatches) {
 }
 
 /**
- * Convert string ID to ObjectId if necessary
- * @param {string|ObjectId} id - ID to convert
- * @returns {ObjectId} Valid ObjectId
- */
-function ensureObjectId(id) {
-    if (mongoose.Types.ObjectId.isValid(id)) {
-        return new mongoose.Types.ObjectId(id);
-    }
-    // For test data with string IDs, create a deterministic ObjectId
-    return new mongoose.Types.ObjectId();
-}
-
-/**
  * Save match results to database (internal function)
  * @param {Object} fastify - Fastify instance
  * @param {Object} matchData - Match data to save
@@ -245,8 +239,8 @@ async function saveMatchesToDb(fastify, matchData) {
 
             const matchRecord = {
                 matchId: matchId,
-                lostAnnouncementId: ensureObjectId(lostId),
-                foundAnnouncementId: ensureObjectId(foundId),
+                lostAnnouncementId: lostId,
+                foundAnnouncementId: foundId,
                 confidence: match.confidence,
                 distance: match.distance,
                 timeDifference: match.timeDifferenceHours,

@@ -13,10 +13,10 @@ import {
  */
 function buildMatchDataForSaving(announcement, recommendations) {
     return {
-        sourceAnnouncementId: announcement._id, // Use _id for database references
+        sourceAnnouncementId: announcement.announcementId, // Use announcementId for consistency
         sourceType: announcement.type,
         matches: recommendations.map(match => ({
-            targetAnnouncementId: match._id, // Use _id for database references
+            targetAnnouncementId: match.announcementId, // Use announcementId for consistency
             confidence: match.confidence,
             distance: match.distance || null,
             timeDifference: match.timeDifferenceHours || null,
@@ -36,7 +36,7 @@ function buildMatchDataForSaving(announcement, recommendations) {
  */
 function transformAnnouncementForMatching(rawAnnouncement) {
     return {
-        _id: rawAnnouncement._id,
+        announcementId: rawAnnouncement.announcementId,
         type: rawAnnouncement.type,
         species: rawAnnouncement.species || rawAnnouncement.petType,
         breed: rawAnnouncement.breed,

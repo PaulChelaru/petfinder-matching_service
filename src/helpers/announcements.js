@@ -32,33 +32,33 @@ async function findAnnouncementById(fastify, announcementId) {
     try {
         return await fastify.mongoose.connection.db
             .collection("announcements")
-            .findOne({ _id: announcementId });
+            .findOne({ announcementId: announcementId });
     } catch (error) {
         throw new ServerError(`Error finding announcement by ID: ${error.message}`);
     }
 }
 
 /**
- * Update an announcement with new match IDs
- * @param {Object} fastify - Fastify instance
- * @param {string} announcementId - The ID of the announcement to update
- * @param {Array} matchIds - Array of announcement IDs that match this announcement
+ * Update announcement with matched announcement IDs
+ * @param {Object} fastify - Fastify instance for database connection
+ * @param {string} announcementId - ID of the announcement to update
+ * @param {Array} matchedAnnouncementIds - Array of announcement IDs that match this announcement
  * @returns {Promise<Object>} The update result
  * @throws {ServerError} If there's an error during the database operation
  */
-async function updateAnnouncementMatches(fastify, announcementId, matchIds) {
+async function updateAnnouncementMatches(fastify, announcementId, matchedAnnouncementIds) {
     try {
         const updateResult = await fastify.mongoose.connection.db
             .collection("announcements")
             .updateOne(
-                { _id: announcementId },
+                { announcementId: announcementId },
                 {
-                    $addToSet: { matches: { $each: matchIds } },
+                    $addToSet: { matches: { $each: matchedAnnouncementIds } },
                     $set: { updatedAt: new Date() },
                 },
             );
         
-        fastify.log.info(`📝 Updated announcement ${announcementId} with ${matchIds.length} new matches`);
+        fastify.log.info(`📝 Updated announcement ${announcementId} with ${matchedAnnouncementIds.length} new matches`);
         return updateResult;
     } catch (error) {
         throw new ServerError(`Error updating announcement matches: ${error.message}`);

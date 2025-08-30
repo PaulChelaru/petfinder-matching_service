@@ -7,12 +7,12 @@ const matchSchema = new mongoose.Schema({
         unique: true,
     },
     lostAnnouncementId: {
-        type: mongoose.Schema.Types.ObjectId,
+        type: String,
         required: true,
         ref: "Announcement",
     },
     foundAnnouncementId: {
-        type: mongoose.Schema.Types.ObjectId,
+        type: String,
         required: true,
         ref: "Announcement",
     },

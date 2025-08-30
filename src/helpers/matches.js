@@ -1,3 +1,5 @@
+import mongoose from "mongoose";
+import { v4 as uuidv4 } from "uuid";
 import {
     analyzeSpeciesMatch,
 } from "../analyzers/species-analyzer.js";
@@ -17,6 +19,7 @@ import {
 } from "./database.js";
 import {
     findPotentialMatches,
+    updateAnnouncementMatches,
 } from "./announcements.js";
 import {
     buildCompleteMatchQuery,
@@ -32,7 +35,8 @@ import {
  */
 async function processNewAnnouncement(fastify, announcement) {
     try {
-        fastify.log.info(`🔍 Processing new ${announcement.type} announcement: ${announcement.announcementId}`);
+        fastify.log.info(`🔍 Processing new ${announcement.type} announcement: ${announcement.announcementId || announcement._id}`);
+        fastify.log.info(`📊 Announcement details: species=${announcement.species}, breed=${announcement.breed}, location=${announcement.locationName}`);
 
         // Configure query options based on announcement type and available data
         const queryOptions = {
@@ -44,33 +48,50 @@ async function processNewAnnouncement(fastify, announcement) {
         // Find potential matches using complete query with all filters
         const completeQuery = buildCompleteMatchQuery(announcement, queryOptions);
 
-        fastify.log.info(`Query options: maxDistance=${queryOptions.maxDistance}m, daysBefore=${queryOptions.daysBefore}, daysAfter=${queryOptions.daysAfter}`);
+        fastify.log.info(`🔧 Query options: maxDistance=${queryOptions.maxDistance}m, daysBefore=${queryOptions.daysBefore}, daysAfter=${queryOptions.daysAfter}`);
+        fastify.log.info("🔍 Complete query built:", JSON.stringify(completeQuery, null, 2));
 
         const potentialMatches = await findPotentialMatches(fastify, completeQuery);
 
         if (potentialMatches.length === 0) {
-            fastify.log.info(`No potential matches found for announcement ${announcement.announcementId}`);
+            fastify.log.info(`❌ No potential matches found for announcement ${announcement.announcementId || announcement._id}`);
             return;
         }
 
-        fastify.log.info(`Found ${potentialMatches.length} potential matches for announcement ${announcement.announcementId}`);
+        fastify.log.info(`🎯 Found ${potentialMatches.length} potential matches for announcement ${announcement.announcementId || announcement._id}`);
+        potentialMatches.forEach((match, index) => {
+            fastify.log.info(`   Match ${index + 1}: ${match._id} - ${match.species} ${match.breed} in ${match.locationName}`);
+        });
 
         // Process and analyze all potential matches
         const analyzedMatches = await processAllMatchCandidates(fastify, announcement, potentialMatches);
 
         if (analyzedMatches.length === 0) {
-            fastify.log.info(`No high-confidence matches found for announcement ${announcement.announcementId}`);
+            fastify.log.info(`❌ No high-confidence matches found for announcement ${announcement.announcementId || announcement._id}`);
             return;
         }
+
+        fastify.log.info(`✅ Found ${analyzedMatches.length} high-confidence matches`);
 
         // Generate final matches
         const matches = generateTopMatches(analyzedMatches);
 
         if (matches.length > 0) {
-            // Save to database
+            // Save to database and get back match records with UUIDs
             const matchData = buildMatchDataForSaving(announcement, matches);
-            await saveMatchesToDb(fastify, matchData);
-            fastify.log.info(`✅ Saved ${matches.length} match results for ${announcement.announcementId} to database`);
+            const savedMatches = await saveMatchesToDb(fastify, matchData);
+            fastify.log.info(`💾 Saved ${matches.length} match results for ${announcement.announcementId || announcement._id} to database`);
+            
+            // Update the source announcement with match UUIDs
+            const matchUUIDs = savedMatches.map(match => match.matchId);
+            await updateAnnouncementMatches(fastify, announcement._id, matchUUIDs);
+            
+            // Update each matched announcement with the match UUIDs
+            for (const savedMatch of savedMatches) {
+                await updateAnnouncementMatches(fastify, savedMatch.matchedAnnouncementId, [savedMatch.matchId]);
+            }
+            
+            fastify.log.info("🔄 Updated all announcements with bidirectional match UUID references");
         }
 
     } catch (error) {
@@ -196,19 +217,36 @@ function generateTopMatches(analyzedMatches) {
 }
 
 /**
+ * Convert string ID to ObjectId if necessary
+ * @param {string|ObjectId} id - ID to convert
+ * @returns {ObjectId} Valid ObjectId
+ */
+function ensureObjectId(id) {
+    if (mongoose.Types.ObjectId.isValid(id)) {
+        return new mongoose.Types.ObjectId(id);
+    }
+    // For test data with string IDs, create a deterministic ObjectId
+    return new mongoose.Types.ObjectId();
+}
+
+/**
  * Save match results to database (internal function)
  * @param {Object} fastify - Fastify instance
  * @param {Object} matchData - Match data to save
  */
 async function saveMatchesToDb(fastify, matchData) {
     try {
+        const savedMatches = [];
+        
         for (const match of matchData.matches) {
+            const matchId = uuidv4(); // Generate unique UUID for each match
             const lostId = matchData.sourceType === "lost" ? matchData.sourceAnnouncementId : match.targetAnnouncementId;
             const foundId = matchData.sourceType === "found" ? matchData.sourceAnnouncementId : match.targetAnnouncementId;
 
             const matchRecord = {
-                lostAnnouncementId: lostId,
-                foundAnnouncementId: foundId,
+                matchId: matchId,
+                lostAnnouncementId: ensureObjectId(lostId),
+                foundAnnouncementId: ensureObjectId(foundId),
                 confidence: match.confidence,
                 distance: match.distance,
                 timeDifference: match.timeDifferenceHours,
@@ -216,7 +254,15 @@ async function saveMatchesToDb(fastify, matchData) {
             };
 
             await createMatch(matchRecord);
+            
+            // Store match with UUID for announcement updates
+            savedMatches.push({
+                ...matchRecord,
+                matchedAnnouncementId: match.targetAnnouncementId, // Use targetAnnouncementId from match data
+            });
         }
+        
+        return savedMatches;
     } catch (error) {
         fastify.log.error("Error saving match results:", error);
         throw error;

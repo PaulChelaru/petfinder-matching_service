@@ -1,6 +1,11 @@
 import mongoose from "mongoose";
 
 const matchSchema = new mongoose.Schema({
+    matchId: {
+        type: String,
+        required: true,
+        unique: true,
+    },
     lostAnnouncementId: {
         type: mongoose.Schema.Types.ObjectId,
         required: true,
@@ -43,6 +48,7 @@ matchSchema.index(
 );
 
 // Index for queries
+matchSchema.index({ matchId: 1 });
 matchSchema.index({ status: 1 });
 matchSchema.index({ confidence: -1 });
 matchSchema.index({ createdAt: -1 });

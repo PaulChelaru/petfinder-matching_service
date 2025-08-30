@@ -20,6 +20,15 @@ async function connectToKafka(fastify) {
             },
         };
 
+        // Add SASL authentication if credentials are provided
+        if (fastify.config.KAFKA_USERNAME && fastify.config.KAFKA_PASSWORD) {
+            kafkaConfig.sasl = {
+                mechanism: "plain",
+                username: fastify.config.KAFKA_USERNAME,
+                password: fastify.config.KAFKA_PASSWORD,
+            };
+        }
+
         const kafka = new Kafka(kafkaConfig);
 
         // Create consumer for announcement events
@@ -34,15 +43,26 @@ async function connectToKafka(fastify) {
         await consumer.subscribe({
             topics: ["announcement_created"],
         });
+        
+        fastify.log.info("🎯 Kafka consumer subscribed to announcement_created topic");
 
-        // Process announcement match events
-        await consumer.run({
+        // Process announcement match events (non-blocking)
+        consumer.run({
             eachMessage: async ({ topic, partition, message }) => {
                 try {
-                    const announcement = JSON.parse(message.value.toString());
+                    fastify.log.info(`📨 Received Kafka message from ${topic}:${partition}:${message.offset}`);
+                    const messageValue = message.value.toString();
+                    fastify.log.info(`📨 Message content: ${messageValue}`);
+                    
+                    const announcement = JSON.parse(messageValue);
+                    fastify.log.info(`🔍 Processing announcement: ${announcement.announcementId || announcement._id}`);
+                    
                     await processNewAnnouncement(fastify, announcement);
+                    
+                    fastify.log.info(`✅ Successfully processed announcement: ${announcement.announcementId || announcement._id}`);
                 } catch (error) {
                     // Log error but continue processing
+                    fastify.log.error(`❌ Error processing Kafka message: ${error.message}`);
                     await errorHandler(error, {
                         topic,
                         partition,
@@ -50,9 +70,11 @@ async function connectToKafka(fastify) {
                     });
 
                     // Continue to next message - don't throw
-                    fastify.log.warn(`Skipped message at ${topic}:${partition}:${message.offset} due to error`);
+                    fastify.log.warn(`⚠️ Skipped message at ${topic}:${partition}:${message.offset} due to error`);
                 }
             },
+        }).catch(error => {
+            fastify.log.error(`❌ Kafka consumer error: ${error.message}`);
         });
 
         // Decorate fastify with Kafka consumer

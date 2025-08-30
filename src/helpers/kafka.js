@@ -13,6 +13,8 @@ import { KafkaError } from "../errors/index.js";
  */
 async function processAnnouncementMessage(fastify, message) {
     try {
+
+        console.log(message)
         const { announcementId } = message;
         fastify.log.info(`📥 Processing announcement ${announcementId} for matching`);
 

@@ -3,11 +3,6 @@ import { Kafka } from "kafkajs";
 const kafka = new Kafka({
     clientId: "test-producer",
     brokers: ["localhost:9094"],
-    sasl: {
-        mechanism: "plain",
-        username: "petfinder",
-        password: "petfinder123",
-    },
 });
 
 const producer = kafka.producer();

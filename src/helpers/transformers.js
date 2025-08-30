@@ -13,10 +13,10 @@ import {
  */
 function buildMatchDataForSaving(announcement, recommendations) {
     return {
-        sourceAnnouncementId: announcement._id,
+        sourceAnnouncementId: announcement._id, // Use _id for database references
         sourceType: announcement.type,
         matches: recommendations.map(match => ({
-            targetAnnouncementId: match._id,
+            targetAnnouncementId: match._id, // Use _id for database references
             confidence: match.confidence,
             distance: match.distance || null,
             timeDifference: match.timeDifferenceHours || null,

@@ -25,6 +25,9 @@ async function build() {
         await app.register(import("./plugins/mongoose.js"));
         await app.register(import("./plugins/kafka.js"));
 
+        // Register routes
+        await app.register(import("./routes/matches.js"), { prefix: "/v1" });
+
         return app;
     } catch (error) {
         console.error("Error during Fastify app build:", error);

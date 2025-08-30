@@ -6,11 +6,40 @@
 function buildBaseMatchQuery(announcement) {
     const oppositeType = announcement.type === "lost" ? "found" : "lost";
 
+    // Use same logic as species analyzer - fallback to petType and normalize
+    const species = announcement.species || announcement.petType;
+    const normalizedSpecies = normalizeSpeciesForQuery(species);
+
     return {
         type: oppositeType,
-        species: announcement.petType === "dog" ? "câine" : "pisică",
+        // Match both species field and petType field to handle both cases
+        $or: [
+            { species: normalizedSpecies },
+            { petType: species }, // Also match original petType
+        ],
         status: "active",
     };
+}
+
+/**
+ * Normalize species for query (same logic as in species-analyzer)
+ * @param {string} species - Species to normalize
+ * @returns {string} Normalized species
+ */
+function normalizeSpeciesForQuery(species) {
+    if (!species) { return "unknown"; }
+    
+    const normalized = species.toLowerCase().trim();
+    const speciesMap = {
+        "dog": "câine",
+        "câine": "câine",
+        "caine": "câine",
+        "cat": "pisică",
+        "pisică": "pisică",
+        "pisica": "pisică",
+    };
+    
+    return speciesMap[normalized] || normalized;
 }
 
 /**

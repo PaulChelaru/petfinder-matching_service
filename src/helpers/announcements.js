@@ -38,7 +38,35 @@ async function findAnnouncementById(fastify, announcementId) {
     }
 }
 
+/**
+ * Update an announcement with new match IDs
+ * @param {Object} fastify - Fastify instance
+ * @param {string} announcementId - The ID of the announcement to update
+ * @param {Array} matchIds - Array of announcement IDs that match this announcement
+ * @returns {Promise<Object>} The update result
+ * @throws {ServerError} If there's an error during the database operation
+ */
+async function updateAnnouncementMatches(fastify, announcementId, matchIds) {
+    try {
+        const updateResult = await fastify.mongoose.connection.db
+            .collection("announcements")
+            .updateOne(
+                { _id: announcementId },
+                {
+                    $addToSet: { matches: { $each: matchIds } },
+                    $set: { updatedAt: new Date() },
+                },
+            );
+        
+        fastify.log.info(`📝 Updated announcement ${announcementId} with ${matchIds.length} new matches`);
+        return updateResult;
+    } catch (error) {
+        throw new ServerError(`Error updating announcement matches: ${error.message}`);
+    }
+}
+
 export {
     findPotentialMatches,
     findAnnouncementById,
+    updateAnnouncementMatches,
 };

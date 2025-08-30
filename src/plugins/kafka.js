@@ -20,15 +20,6 @@ async function connectToKafka(fastify) {
             },
         };
 
-        // Only add SASL if username and password are provided
-        if (fastify.config.KAFKA_USERNAME && fastify.config.KAFKA_PASSWORD) {
-            kafkaConfig.sasl = {
-                mechanism: "plain",
-                username: fastify.config.KAFKA_USERNAME,
-                password: fastify.config.KAFKA_PASSWORD,
-            };
-        }
-
         const kafka = new Kafka(kafkaConfig);
 
         // Create consumer for announcement events
@@ -39,9 +30,9 @@ async function connectToKafka(fastify) {
         // Connect consumer
         await consumer.connect();
 
-        // Subscribe to announcement match events
+        // Subscribe to announcement events
         await consumer.subscribe({
-            topics: ["announcement-match"],
+            topics: ["announcement_created"],
         });
 
         // Process announcement match events

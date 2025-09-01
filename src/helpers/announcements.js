@@ -1,5 +1,35 @@
 import { ServerError } from "../errors/index.js";
 
+/**
+ * Invalidate cache for a user after matches update
+ * @param {Object} fastify - Fastify instance
+ * @param {string} userId - User ID to invalidate cache for
+ */
+async function invalidateUserCache(fastify, userId) {
+    try {
+        // Make HTTP request to announcement service to invalidate cache
+        const announcementServiceUrl = process.env.ANNOUNCEMENT_SERVICE_URL || "http://localhost:3003";
+        
+        // Use dynamic import for fetch in Node.js
+        const { default: fetch } = await import("node-fetch");
+        
+        const response = await fetch(`${announcementServiceUrl}/api/v1/cache/invalidate/user/${userId}`, {
+            method: "DELETE",
+            headers: {
+                "X-Service-Key": process.env.SERVICE_KEY || "matching-service-key",
+            },
+        });
+        
+        if (response.ok) {
+            fastify.log.info(`🗑️ Successfully invalidated cache for user ${userId}`);
+        } else {
+            fastify.log.warn(`⚠️ Failed to invalidate cache for user ${userId}: ${response.status}`);
+        }
+    } catch (error) {
+        fastify.log.error(`❌ Error invalidating cache for user ${userId}: ${error.message}`);
+    }
+}
+
 
 /**
  * Find potential matching announcements from the database
@@ -39,15 +69,22 @@ async function findAnnouncementById(fastify, announcementId) {
 }
 
 /**
- * Update announcement with matched announcement IDs
+ * Update announcement with matched announcement objects containing ID and score
  * @param {Object} fastify - Fastify instance for database connection
  * @param {string} announcementId - ID of the announcement to update
- * @param {Array} matchedAnnouncementIds - Array of announcement IDs that match this announcement
+ * @param {Array} matchedAnnouncementIds - Array of objects {announcementId, score} that match this announcement
  * @returns {Promise<Object>} The update result
  * @throws {ServerError} If there's an error during the database operation
  */
 async function updateAnnouncementMatches(fastify, announcementId, matchedAnnouncementIds) {
     try {
+        // Găsim anunțul pentru a obține userId-ul
+        const announcement = await findAnnouncementById(fastify, announcementId);
+        if (!announcement) {
+            throw new ServerError(`Announcement ${announcementId} not found`);
+        }
+
+        // matchedAnnouncementIds este un array de obiecte [{announcementId, score}, ...]
         const updateResult = await fastify.mongoose.connection.db
             .collection("announcements")
             .updateOne(
@@ -58,7 +95,11 @@ async function updateAnnouncementMatches(fastify, announcementId, matchedAnnounc
                 },
             );
         
-        fastify.log.info(`📝 Updated announcement ${announcementId} with ${matchedAnnouncementIds.length} new matches`);
+        fastify.log.info(`📝 Updated announcement ${announcementId} with ${matchedAnnouncementIds.length} new matches (with scores)`);
+        
+        // Invalidăm cache-ul pentru user după actualizarea matches-urilor
+        await invalidateUserCache(fastify, announcement.userId);
+        
         return updateResult;
     } catch (error) {
         throw new ServerError(`Error updating announcement matches: ${error.message}`);
@@ -69,4 +110,5 @@ export {
     findPotentialMatches,
     findAnnouncementById,
     updateAnnouncementMatches,
+    invalidateUserCache,
 };

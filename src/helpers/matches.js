@@ -81,13 +81,19 @@ async function processNewAnnouncement(fastify, announcement) {
             const savedMatches = await saveMatchesToDb(fastify, matchData);
             fastify.log.info(`💾 Saved ${matches.length} match results for ${announcement.announcementId} to database`);
             
-            // Update the source announcement with matched announcement IDs
-            const matchedAnnouncementIds = savedMatches.map(match => match.matchedAnnouncementId);
+            // Update the source announcement with matched announcement IDs and scores
+            const matchedAnnouncementIds = savedMatches.map(match => ({
+                announcementId: match.matchedAnnouncementId,
+                score: match.confidence,
+            }));
             await updateAnnouncementMatches(fastify, announcement.announcementId, matchedAnnouncementIds);
             
-            // Update each matched announcement with the source announcement ID
+            // Update each matched announcement with the source announcement ID and score
             for (const savedMatch of savedMatches) {
-                await updateAnnouncementMatches(fastify, savedMatch.matchedAnnouncementId, [announcement.announcementId]);
+                await updateAnnouncementMatches(fastify, savedMatch.matchedAnnouncementId, [{
+                    announcementId: announcement.announcementId,
+                    score: savedMatch.confidence,
+                }]);
             }
             
             fastify.log.info("🔄 Updated all announcements with bidirectional announcement ID references");
